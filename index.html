@@ -2,42 +2,106 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>航空自衛隊レーダーサイト可視化トップ</title>
+  <title>航空自衛隊レーダーサイト地図</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 2rem;
-      max-width: 600px;
-      margin: auto;
+    #map { height: 100vh; }
+    #filters {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px; border-radius: 4px;
+      z-index: 1000; font-size: 14px; line-height: 1.4;
     }
-    h1 {
-      font-size: 1.6rem;
-      margin-bottom: 1rem;
-    }
-    a.button {
-      display: inline-block;
-      padding: 0.6rem 1.2rem;
-      background-color: #007bff;
-      color: white;
-      text-decoration: none;
-      border-radius: 4px;
-    }
-    a.button:hover {
-      background-color: #0056b3;
-    }
+    #filters h3 { margin: 5px 0; font-size: 16px; }
+    #filters label { display: block; }
+    .popup-img { display:block; width:120px; margin-bottom:5px; border:1px solid #ccc; }
+    .popup-hours { font-size:13px; color:#555; }
   </style>
 </head>
 <body>
-  <h1>航空自衛隊レーダーサイト可視化</h1>
-  <p>
-    全国のレーダーサイトを地図上に表示し、<br>
-    方面隊ごと・機種ごとにフィルタリングできます。
-  </p>
-  <p>
-    <a href="radarmap.html" class="button" target="_blank">
-      地図を開く
-    </a>
-  </p>
+  <div id="filters">
+    <h3>方面隊フィルター</h3>
+    <label><input type="checkbox" name="area" value="北部" checked> 北部</label>
+    <label><input type="checkbox" name="area" value="中部" checked> 中部</label>
+    <label><input type="checkbox" name="area" value="西部" checked> 西部</label>
+    <label><input type="checkbox" name="area" value="南西" checked> 南西</label>
+    <label><input type="checkbox" name="area" value="教育" checked> 教育</label>
+    <h3>機種フィルター</h3>
+    <label><input type="checkbox" name="type" value="J/FPS-7" checked> J/FPS-7 系</label>
+    <label><input type="checkbox" name="type" value="J/FPS-5" checked> J/FPS-5 系</label>
+    <label><input type="checkbox" name="type" value="J/FPS-3" checked> J/FPS-3 系</label>
+    <label><input type="checkbox" name="type" value="その他" checked> その他</label>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([35.0,136.0],5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:'© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const colors = { 北部:'blue', 中部:'green', 西部:'red', 南西:'orange', 教育:'purple' };
+    const specs = { 'J/FPS-7':{range:500,cat:'J/FPS-7'}, 'J/FPS-5':{range:450,cat:'J/FPS-5'},
+                    'J/FPS-3':{range:300,cat:'J/FPS-3'}, その他:{range:200,cat:'その他'} };
+
+    function getCategory(t){ if(t.includes('J/FPS-7'))return'J/FPS-7';
+                           if(t.includes('J/FPS-5'))return'J/FPS-5';
+                           if(t.includes('J/FPS-3'))return'J/FPS-3'; return'その他'; }
+    function createIcon(color,shape){
+      if(shape==='triangle'){
+        return L.divIcon({ html:`<div style="
+          width:0;height:0;
+          border-left:10px solid transparent;
+          border-right:10px solid transparent;
+          border-bottom:20px solid ${color};
+        "></div>`,
+        iconSize:[20,20],iconAnchor:[10,20] });
+      }
+      const r=shape==='circle'?'50%':'0%';
+      const rot=shape==='diamond'?'rotate(45deg)':'none';
+      return L.divIcon({ html:`<div style="
+        background:${color};width:20px;height:20px;
+        border-radius:${r};transform:${rot};
+        border:2px solid white;
+      "></div>`, iconSize:[20,20],iconAnchor:[10,10] });
+    }
+
+    const data = [
+      {name:'稚内',lat:45.4094,lng:141.6739,area:'北部',type:'J/FPS-7B',
+       image:'https://example.com/wakkanai.jpg',hours:'24時間運用'},
+      /* …他サイトも同様に追加… */
+    ];
+
+    const elements = data.map(s => {
+      const cat = getCategory(s.type), col=colors[s.area], spec=specs[cat];
+      const shape = { 'J/FPS-7':'circle','J/FPS-5':'square','J/FPS-3':'diamond' }[cat]||'triangle';
+      const marker = L.marker([s.lat,s.lng],{icon:createIcon(col,shape)})
+        .bindPopup(`
+          <img src="${s.image}" class="popup-img" alt=""><br>
+          <strong>${s.name}</strong><br>
+          方面隊: ${s.area}<br>機種: ${s.type}<br>
+          <div class="popup-hours">運用時間: ${s.hours}</div>
+        `);
+      const circle = L.circle([s.lat,s.lng],{radius:spec.range*1000, color:col, weight:1, fillOpacity:0.1});
+      return { site:s, cat, marker, circle };
+    });
+
+    function getSelected(n){
+      return Array.from(document.querySelectorAll(`#filters input[name="${n}"]:checked`))
+                  .map(el=>el.value);
+    }
+    function update(){
+      const sa=getSelected('area'), st=getSelected('type');
+      elements.forEach(e => {
+        const ok = sa.includes(e.site.area) && st.includes(e.cat);
+        ok ? (e.marker.addTo(map), e.circle.addTo(map))
+           : (map.removeLayer(e.marker), map.removeLayer(e.circle));
+      });
+    }
+    document.querySelectorAll('#filters input').forEach(i=>i.addEventListener('change',update));
+    update();
+  </script>
 </body>
 </html>
