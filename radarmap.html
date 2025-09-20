@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>航空自衛隊レーダーサイト地図（カバレッジ付き）</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; }
+    #filters {
+      position: absolute;
+      top: 10px; right: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px; border-radius: 4px;
+      z-index: 1000; font-size: 14px; line-height: 1.4;
+    }
+    #filters h3 { margin: 5px 0; font-size: 16px; }
+    #filters label { display: block; }
+  </style>
+</head>
+<body>
+  <div id="filters">
+    <h3>方面隊フィルター</h3>
+    <label><input type="checkbox" name="area" value="北部" checked> 北部</label>
+    <label><input type="checkbox" name="area" value="中部" checked> 中部</label>
+    <label><input type="checkbox" name="area" value="西部" checked> 西部</label>
+    <label><input type="checkbox" name="area" value="南西" checked> 南西</label>
+    <label><input type="checkbox" name="area" value="教育" checked> 教育</label>
+
+    <h3>機種フィルター</h3>
+    <label><input type="checkbox" name="type" value="J/FPS-7" checked> J/FPS-7 系</label>
+    <label><input type="checkbox" name="type" value="J/FPS-5" checked> J/FPS-5 系</label>
+    <label><input type="checkbox" name="type" value="J/FPS-3" checked> J/FPS-3 系</label>
+    <label><input type="checkbox" name="type" value="その他" checked> その他</label>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    // 地図初期化
+    const map = L.map('map').setView([35.0, 136.0], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 方面隊カラー
+    const colors = {
+      "北部":"blue","中部":"green","西部":"red","南西":"orange","教育":"purple"
+    };
+
+    // レーダー機種→カテゴリ／探知距離(km)
+    const specs = {
+      "J/FPS-7": { range: 500, cat: "J/FPS-7" },
+      "J/FPS-5": { range: 450, cat: "J/FPS-5" },
+      "J/FPS-3": { range: 300, cat: "J/FPS-3" },
+      "その他": { range: 200, cat: "その他" }
+    };
+
+    // 機種カテゴリ判定
+    function getCategory(type) {
+      if (type.includes("J/FPS-7")) return "J/FPS-7";
+      if (type.includes("J/FPS-5")) return "J/FPS-5";
+      if (type.includes("J/FPS-3")) return "J/FPS-3";
+      return "その他";
+    }
+
+    // アイコン生成
+    function createIcon(color, shape) {
+      if (shape==="triangle") {
+        return L.divIcon({
+          html:`<div style="
+            width:0;height:0;
+            border-left:10px solid transparent;
+            border-right:10px solid transparent;
+            border-bottom:20px solid ${color};
+          "></div>`,
+          iconSize:[20,20], iconAnchor:[10,20]
+        });
+      }
+      const radius = (shape==="circle") ? "50%" : "0%";
+      const rotate = (shape==="diamond") ? "rotate(45deg)" : "none";
+      return L.divIcon({
+        html:`<div style="
+          background:${color};
+          width:20px;height:20px;
+          border-radius:${radius};
+          transform:${rotate};
+          border:2px solid white;
+        "></div>`,
+        iconSize:[20,20], iconAnchor:[10,10]
+      });
+    }
+
+    // 全サイトデータ
+    const radarSites = [
+      // 北部方面隊
+      {name:"稚内",lat:45.4094,lng:141.6739,area:"北部",type:"J/FPS-7B"},
+      {name:"網走",lat:44.0206,lng:144.2733,area:"北部",type:"J/FPS-4"},
+      {name:"根室",lat:43.3236,lng:145.5828,area:"北部",type:"J/FPS-2A"},
+      {name:"当別",lat:43.2167,lng:141.5167,area:"北部",type:"J/FPS-3改"},
+      {name:"襟裳",lat:42.0333,lng:143.1667,area:"北部",type:"AN/FPS-20S"},
+      {name:"大湊",lat:41.2833,lng:141.1333,area:"北部",type:"J/FPS-5B"},
+      {name:"山田",lat:39.4667,lng:141.9333,area:"北部",type:"J/FPS-2"},
+      {name:"加茂",lat:38.9333,lng:139.4667,area:"北部",type:"J/FPS-3改"},
+      {name:"奥尻島",lat:42.1333,lng:139.4667,area:"北部",type:"J/FPS-4"},
+      // 中部方面隊
+      {name:"大滝根山",lat:37.3333,lng:140.6333,area:"中部",type:"J/FPS-3改"},
+      {name:"佐渡",lat:38.0167,lng:138.3833,area:"中部",type:"J/FPS-5B"},
+      {name:"峯岡山",lat:35.1333,lng:139.9667,area:"中部",type:"J/FPS-4"},
+      {name:"輪島",lat:37.3833,lng:136.9000,area:"中部",type:"J/FPS-3改"},
+      {name:"御前崎",lat:34.6333,lng:138.2167,area:"中部",type:"J/FPS-2"},
+      {name:"経ヶ岬",lat:35.6833,lng:135.0667,area:"中部",type:"J/FPS-3改"},
+      {name:"笠取山",lat:34.9333,lng:135.6167,area:"中部",type:"J/FPS-3A改"},
+      {name:"串本",lat:33.4833,lng:135.7833,area:"中部",type:"AN/FPS-20S"},
+      // 西部方面隊
+      {name:"高尾山",lat:34.1167,lng:132.3167,area:"西部",type:"J/FPS-4"},
+      {name:"見島",lat:34.7825,lng:131.4061,area:"西部",type:"J/FPS-7"},
+      {name:"海栗島",lat:33.8833,lng:130.0833,area:"西部",type:"J/FPS-7"},
+      {name:"背振山",lat:33.4667,lng:130.3667,area:"西部",type:"J/FPS-3A改"},
+      {name:"福江島",lat:32.6667,lng:128.7167,area:"西部",type:"J/FPS-4"},
+      {name:"下甑島",lat:31.7167,lng:129.8667,area:"西部",type:"J/FPS-5A"},
+      {name:"高畑山",lat:31.5833,lng:130.6167,area:"西部",type:"J/FPS-7"},
+      // 南西方面隊
+      {name:"沖永良部島",lat:27.3667,lng:128.5833,area:"南西",type:"J/FPS-7"},
+      {name:"久米島",lat:26.3333,lng:126.7833,area:"南西",type:"J/FPS-4"},
+      {name:"与座岳",lat:26.1844,lng:127.7556,area:"南西",type:"J/FPS-5C"},
+      {name:"宮古島",lat:24.7833,lng:125.2833,area:"南西",type:"J/FPS-7"},
+      // 教育・訓練
+      {name:"硫黄島",lat:24.7833,lng:141.3167,area:"教育",type:"J/FPS-2"},
+      {name:"浜松",lat:34.7108,lng:137.7261,area:"教育",type:"J/FPS-2"}
+    ];
+
+    // マーカー＆カバレッジを生成し配列に保管
+    const elements = radarSites.map(site => {
+      const areaColor = colors[site.area];
+      const cat = getCategory(site.type);
+      const spec = specs[cat];
+      const shape = {
+        "J/FPS-7":"circle",
+        "J/FPS-5":"square",
+        "J/FPS-3":"diamond"
+      }[cat] || "triangle";
+
+      // アイコン
+      const icon = createIcon(areaColor, shape);
+      const marker = L.marker([site.lat, site.lng], { icon })
+        .bindPopup(`<strong>${site.name}</strong><br>方面隊: ${site.area}<br>機種: ${site.type}`);
+
+      // カバレッジ円（半径：range km → m）
+      const circle = L.circle([site.lat, site.lng], {
+        radius: spec.range * 1000,
+        color: areaColor,
+        weight: 1,
+        fillOpacity: 0.1
+      });
+
+      return { site, cat, marker, circle };
+    });
+
+    // 選択中フィルター取得
+    function getSelected(name) {
+      return Array.from(
+        document.querySelectorAll(`#filters input[name="${name}"]:checked`)
+      ).map(el => el.value);
+    }
+
+    // マーカー＋円の表示制御
+    function updateDisplay() {
+      const selArea = getSelected("area");
+      const selType = getSelected("type");
+      elements.forEach(el => {
+        const ok = selArea.includes(el.site.area) && selType.includes(el.cat);
+        if (ok) {
+          el.marker.addTo(map);
+          el.circle.addTo(map);
+        } else {
+          map.removeLayer(el.marker);
+          map.removeLayer(el.circle);
+        }
+      });
+    }
+
+    // フィルター変更イベント
+    document.querySelectorAll('#filters input').forEach(input => {
+      input.addEventListener('change', updateDisplay);
+    });
+
+    // 初期表示
+    updateDisplay();
+  </script>
+</body>
+</html>
